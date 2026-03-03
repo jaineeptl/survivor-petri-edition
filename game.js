@@ -462,9 +462,13 @@ function handleCollisions() {
       state.nutrientsCollected += 1;
 
       // every 10 nutrients -> +1 shot
-      if (state.nutrientsCollected % 10 === 0) {
-        state.shots += 1;
-      }
+       state.nutrientsCollected += 1;
+
+if (state.nutrientsCollected >= 3) {
+  state.shots += 1;
+  state.nutrientsCollected = 0;
+}
+
 
       updateStatus();
       for (let i = 0; i < 12; i++) spawnParticle("nutrient", n.x, n.y, rand(-90,90), rand(-90,90));
