@@ -1,27 +1,17 @@
-// Petri Dish Survivor (SVG sprites + pink agar dish + shooting mechanic)
-// Requires these files in same folder:
-//   cell.svg
-//   bacteria.svg
-
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const statusEl = document.getElementById("status");
 const restartBtn = document.getElementById("restart");
-const shootBtn = document.getElementById("shoot");
 
 const W = canvas.width;
 const H = canvas.height;
 
+// ---- input ----
 const keys = new Set();
-window.addEventListener("keydown", (e) => {
-  keys.add(e.key.toLowerCase());
-  if (e.code === "Space") {
-    e.preventDefault();
-    tryShoot();
-  }
-});
+window.addEventListener("keydown", (e) => keys.add(e.key.toLowerCase()));
 window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
 
+// ---- helpers ----
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const rand = (min, max) => Math.random() * (max - min) + min;
 
@@ -98,33 +88,32 @@ function resetGame() {
     player: {
       x: W / 2,
       y: H / 2,
-      r: 14,          // smaller than before
-      speed: 265,
-      invuln: 0,
-      aimX: 1,         // last movement direction; used for shooting
-      aimY: 0,
+      r: 14,
+      speed: 255,
+      invuln: 0
     },
 
     nutrients: [],
     bacteria: [],
-    bullets: [],
-
     particles: [],
 
     nutrientTimer: 0,
     bacteriaTimer: 0,
 
-    // shooting economy
-    nutrientsCollected: 0,
-    shots: 0, // +1 every 10 nutrients
-    shootCooldown: 0
+    // pulse kill economy
+    nutrientsCollected: 0, // total count
+    pulseEvery: 5,
+    pulseRadius: 130,      // <-- change this if you want bigger/smaller radius
+    pulseFx: 0             // seconds remaining for pulse ring animation
   };
 
   updateStatus();
 }
 
 function updateStatus() {
-  statusEl.textContent = `Score: ${state.score} • Lives: ${state.lives} • Shots: ${state.shots}`;
+  // show how close you are to the next pulse
+  const untilPulse = state.pulseEvery - (state.nutrientsCollected % state.pulseEvery);
+  statusEl.textContent = `Score: ${state.score} • Lives: ${state.lives} • Pulse in: ${untilPulse === state.pulseEvery ? 0 : untilPulse}`;
 }
 
 // ---- background: blue outside, pink agar inside ----
@@ -176,7 +165,7 @@ function drawPetriBackground() {
   ctx.lineWidth = 12;
   ctx.strokeStyle = "#cbe3ff";
   ctx.beginPath();
-  ctx.arc(W/2, H/2, R + 8, 0, Math.PI*2);
+  ctx.arc(W / 2, H / 2, R + 8, 0, Math.PI * 2);
   ctx.stroke();
 
   // inner shadow
@@ -184,7 +173,7 @@ function drawPetriBackground() {
   ctx.lineWidth = 18;
   ctx.strokeStyle = "#000000";
   ctx.beginPath();
-  ctx.arc(W/2, H/2, R - 2, 0, Math.PI*2);
+  ctx.arc(W / 2, H / 2, R - 2, 0, Math.PI * 2);
   ctx.stroke();
 
   // highlight arc
@@ -192,12 +181,12 @@ function drawPetriBackground() {
   ctx.lineWidth = 18;
   ctx.strokeStyle = "#ffffff";
   ctx.beginPath();
-  ctx.arc(W/2 - 90, H/2 - 70, R, -1.2, -0.45);
+  ctx.arc(W / 2 - 90, H / 2 - 70, R, -1.2, -0.45);
   ctx.stroke();
   ctx.restore();
 
   // vignette
-  const v = ctx.createRadialGradient(W/2, H/2, 100, W/2, H/2, Math.max(W,H)/1.0);
+  const v = ctx.createRadialGradient(W / 2, H / 2, 100, W / 2, H / 2, Math.max(W, H) / 1.0);
   v.addColorStop(0, "rgba(0,0,0,0)");
   v.addColorStop(1, "rgba(0,0,0,0.38)");
   ctx.fillStyle = v;
@@ -243,7 +232,7 @@ function drawParticles() {
     if (p.type === "hit") ctx.fillStyle = "#ff3b7a";
     else if (p.type === "nutrient") ctx.fillStyle = "#d4ffd9";
     else if (p.type === "slime") ctx.fillStyle = "#ff4d6d";
-    else if (p.type === "shot") ctx.fillStyle = "#cbe3ff";
+    else if (p.type === "pulse") ctx.fillStyle = "#cbe3ff";
     else ctx.fillStyle = "#ffffff";
 
     ctx.beginPath();
@@ -268,85 +257,76 @@ function spawnBacteria() {
   const p = randomPointInDish(state.dish, 18);
   const seed = rand(0, 9999);
 
+  // Slower difficulty scaling on speed:
+  // - base speeds lower
+  // - scale only partially with difficulty
+  const base = rand(62, 88);
+  const scaled = base * (1 + (state.difficulty - 1) * 0.45);
+
   state.bacteria.push({
     x: p.x,
     y: p.y,
     r: rand(12, 15),
-    speed: rand(85, 125) * state.difficulty,
+    speed: scaled,
     seed,
     vx: 1,
     vy: 0
   });
 }
 
-// ---- shooting ----
-function tryShoot() {
-  if (!state || !state.running) return;
-  if (state.shots <= 0) return;
-  if (state.shootCooldown > 0) return;
+// ---- pulse ability (every 5 nutrients) ----
+function triggerPulse() {
+  state.pulseFx = 0.45; // how long the ring animation lasts
 
   const p = state.player;
-  const speed = 520;
+  const R = state.pulseRadius;
 
-  // direction from last movement; fallback right
-  let ax = p.aimX || 1;
-  let ay = p.aimY || 0;
-  const mag = Math.sqrt(ax*ax + ay*ay) || 1;
-  ax /= mag; ay /= mag;
+  // eliminate bacteria within radius
+  for (let i = state.bacteria.length - 1; i >= 0; i--) {
+    const b = state.bacteria[i];
+    if (dist(p, b) <= R) {
+      state.bacteria.splice(i, 1);
+      state.score += 18;
 
-  state.bullets.push({
-    x: p.x + ax * (p.r + 10),
-    y: p.y + ay * (p.r + 10),
-    vx: ax * speed,
-    vy: ay * speed,
-    r: 4,
-    life: 1.15
-  });
-
-  state.shots -= 1;
-  state.shootCooldown = 0.18;
-  updateStatus();
-
-  for (let k = 0; k < 10; k++) {
-    spawnParticle("shot", p.x, p.y, ax * rand(80, 160) + rand(-60,60), ay * rand(80,160) + rand(-60,60));
-  }
-}
-
-shootBtn.addEventListener("click", tryShoot);
-
-function updateBullets(dt) {
-  for (let i = state.bullets.length - 1; i >= 0; i--) {
-    const b = state.bullets[i];
-    b.life -= dt;
-    b.x += b.vx * dt;
-    b.y += b.vy * dt;
-
-    // remove if out of dish or dead
-    if (b.life <= 0 || !inDish(state.dish, b.x, b.y, 6)) {
-      state.bullets.splice(i, 1);
+      // burst particles at bacteria location
+      for (let k = 0; k < 18; k++) {
+        spawnParticle("hit", b.x, b.y, rand(-160, 160), rand(-160, 160));
+      }
     }
   }
+
+  // pulse particles from player
+  for (let k = 0; k < 36; k++) {
+    const ang = rand(0, Math.PI * 2);
+    const spd = rand(120, 240);
+    spawnParticle("pulse", p.x, p.y, Math.cos(ang) * spd, Math.sin(ang) * spd);
+  }
+
+  updateStatus();
 }
 
-function drawBullets() {
-  for (const b of state.bullets) {
-    ctx.save();
-    ctx.globalAlpha = 0.9;
+function drawPulseRing() {
+  if (state.pulseFx <= 0) return;
+  const p = state.player;
 
-    // glow
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, b.r * 2.2, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(203,227,255,0.35)";
-    ctx.fill();
+  // ring expands slightly and fades
+  const t = 1 - (state.pulseFx / 0.45);
+  const ringR = state.pulseRadius * (0.92 + 0.10 * t);
 
-    // core
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-    ctx.fillStyle = "#e8f4ff";
-    ctx.fill();
+  ctx.save();
+  ctx.globalAlpha = 0.22 * (1 - t);
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = "#cbe3ff";
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, ringR, 0, Math.PI * 2);
+  ctx.stroke();
 
-    ctx.restore();
-  }
+  ctx.globalAlpha = 0.10 * (1 - t);
+  ctx.lineWidth = 18;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, ringR, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
 }
 
 // ---- drawing SVG sprites ----
@@ -359,25 +339,25 @@ function drawSprite(img, x, y, size, rotationRad = 0, alpha = 1) {
   ctx.imageSmoothingEnabled = true;
 
   const s = size;
-  ctx.drawImage(img, -s/2, -s/2, s, s);
+  ctx.drawImage(img, -s / 2, -s / 2, s, s);
   ctx.restore();
 }
 
 function drawNutrient(n) {
-  const g = ctx.createRadialGradient(n.x - n.r*0.35, n.y - n.r*0.35, n.r*0.2, n.x, n.y, n.r);
+  const g = ctx.createRadialGradient(n.x - n.r * 0.35, n.y - n.r * 0.35, n.r * 0.2, n.x, n.y, n.r);
   g.addColorStop(0, "#effff4");
   g.addColorStop(0.55, "#7ee787");
   g.addColorStop(1, "#1b7f45");
 
   ctx.beginPath();
-  ctx.arc(n.x, n.y, n.r, 0, Math.PI*2);
+  ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
   ctx.fillStyle = g;
   ctx.fill();
 
   ctx.save();
   ctx.globalAlpha = 0.35;
   ctx.beginPath();
-  ctx.arc(n.x - n.r*0.35, n.y - n.r*0.35, n.r*0.35, 0, Math.PI*2);
+  ctx.arc(n.x - n.r * 0.35, n.y - n.r * 0.35, n.r * 0.35, 0, Math.PI * 2);
   ctx.fillStyle = "#ffffff";
   ctx.fill();
   ctx.restore();
@@ -387,12 +367,12 @@ function drawGameOver() {
   ctx.save();
   ctx.globalAlpha = 0.82;
   ctx.fillStyle = "#000";
-  ctx.fillRect(0,0,W,H);
+  ctx.fillRect(0, 0, W, H);
   ctx.restore();
 
-  drawText("Game Over", W/2, H/2 - 20, 36, "#ffffff", "center");
-  drawText(`Final score: ${state.score}`, W/2, H/2 + 18, 18, "rgba(255,255,255,0.9)", "center");
-  drawText("Hit Restart to play again", W/2, H/2 + 46, 14, "rgba(255,255,255,0.7)", "center");
+  drawText("Game Over", W / 2, H / 2 - 20, 36, "#ffffff", "center");
+  drawText(`Final score: ${state.score}`, W / 2, H / 2 + 18, 18, "rgba(255,255,255,0.9)", "center");
+  drawText("Hit Restart to play again", W / 2, H / 2 + 46, 14, "rgba(255,255,255,0.7)", "center");
 }
 
 // ---- movement + collisions ----
@@ -411,10 +391,8 @@ function movePlayer(dt) {
   }
 
   if (vx !== 0 || vy !== 0) {
-    p.aimX = vx;
-    p.aimY = vy;
     for (let k = 0; k < 2; k++) {
-      spawnParticle("trail", p.x + rand(-6,6), p.y + rand(-6,6), -vx * 50 + rand(-20,20), -vy * 50 + rand(-20,20));
+      spawnParticle("trail", p.x + rand(-6, 6), p.y + rand(-6, 6), -vx * 50 + rand(-20, 20), -vy * 50 + rand(-20, 20));
     }
   }
 
@@ -423,7 +401,6 @@ function movePlayer(dt) {
   constrainToDish(state.dish, p);
 
   p.invuln = Math.max(0, p.invuln - dt);
-  state.shootCooldown = Math.max(0, state.shootCooldown - dt);
 }
 
 function moveBacteria(dt) {
@@ -432,20 +409,20 @@ function moveBacteria(dt) {
   for (const b of state.bacteria) {
     const dx = pl.x - b.x;
     const dy = pl.y - b.y;
-    const d = Math.sqrt(dx*dx + dy*dy) || 1;
+    const d = Math.sqrt(dx * dx + dy * dy) || 1;
 
     b.vx = dx / d;
     b.vy = dy / d;
 
-    const wiggle = Math.sin(state.time * 7 + b.seed) * 0.16;
+    const wiggle = Math.sin(state.time * 6 + b.seed) * 0.14;
     const wx = b.vx * Math.cos(wiggle) - b.vy * Math.sin(wiggle);
     const wy = b.vx * Math.sin(wiggle) + b.vy * Math.cos(wiggle);
 
     b.x += wx * b.speed * dt;
     b.y += wy * b.speed * dt;
 
-    if (Math.random() < 0.20) {
-      spawnParticle("slime", b.x + rand(-4,4), b.y + rand(-4,4), -wx * 30 + rand(-10,10), -wy * 30 + rand(-10,10));
+    if (Math.random() < 0.14) {
+      spawnParticle("slime", b.x + rand(-4, 4), b.y + rand(-4, 4), -wx * 28 + rand(-10, 10), -wy * 28 + rand(-10, 10));
     }
 
     constrainToDish(state.dish, b);
@@ -461,44 +438,21 @@ function handleCollisions() {
       state.score += 10;
       state.nutrientsCollected += 1;
 
-     // every 3 nutrients -> +1 shot
-if (state.nutrientsCollected % 3 === 0) {
-  state.shots += 1;
-}
-
-
       updateStatus();
-      for (let i = 0; i < 12; i++) spawnParticle("nutrient", n.x, n.y, rand(-90,90), rand(-90,90));
+
+      for (let i = 0; i < 12; i++) {
+        spawnParticle("nutrient", n.x, n.y, rand(-90, 90), rand(-90, 90));
+      }
+
+      // Every 5 nutrients -> pulse
+      if (state.nutrientsCollected % state.pulseEvery === 0) {
+        triggerPulse();
+      }
+
       return false;
     }
     return true;
   });
-
-  // bullets vs bacteria
-  for (let i = state.bacteria.length - 1; i >= 0; i--) {
-    const bac = state.bacteria[i];
-    let killed = false;
-
-    for (let j = state.bullets.length - 1; j >= 0; j--) {
-      const bul = state.bullets[j];
-      if (dist(bac, bul) < bac.r * 0.9 + bul.r) {
-        // kill bacteria
-        state.bacteria.splice(i, 1);
-        state.bullets.splice(j, 1);
-        state.score += 25;
-        updateStatus();
-
-        for (let k = 0; k < 22; k++) {
-          spawnParticle("hit", bac.x, bac.y, rand(-160,160), rand(-160,160));
-        }
-
-        killed = true;
-        break;
-      }
-    }
-
-    if (killed) continue;
-  }
 
   // bacteria vs player
   for (let i = state.bacteria.length - 1; i >= 0; i--) {
@@ -509,35 +463,46 @@ if (state.nutrientsCollected % 3 === 0) {
         state.lives -= 1;
         p.invuln = 0.9;
         updateStatus();
-        for (let k = 0; k < 20; k++) spawnParticle("hit", p.x, p.y, rand(-140,140), rand(-140,140));
+
+        for (let k = 0; k < 20; k++) {
+          spawnParticle("hit", p.x, p.y, rand(-140, 140), rand(-140, 140));
+        }
+
         if (state.lives <= 0) state.running = false;
       }
     }
   }
 }
 
-// ---- main update/draw ----
+// ---- difficulty tuning (slower) ----
+// These are the lines that control how fast it gets hard:
+//  1) state.difficulty ramp (lower slope)
+//  2) spawn intervals ramp (slower ramp + higher minimums)
 function update(dt) {
+  // pulse ring timer
+  state.pulseFx = Math.max(0, state.pulseFx - dt);
+
   if (!state.running) {
     updateParticles(dt);
     return;
   }
 
   state.time += dt;
-  state.difficulty = 1 + state.time / 45;
+
+  // SLOWER DIFFICULTY RAMP (was /45 or /90; even slower now)
+  state.difficulty = 1 + state.time / 120;
 
   movePlayer(dt);
   moveBacteria(dt);
-  updateBullets(dt);
   handleCollisions();
   updateParticles(dt);
 
-  // spawn rates (ramp)
+  // SLOWER SPAWN RAMP (bacteria appear slower + ramp slower)
   state.nutrientTimer -= dt;
   state.bacteriaTimer -= dt;
 
-  const nutrientInterval = Math.max(0.34, 1.05 - state.time / 150);
-  const bacteriaInterval = Math.max(0.52, 1.35 - state.time / 110);
+  const nutrientInterval = Math.max(0.46, 1.18 - state.time / 280);
+  const bacteriaInterval = Math.max(0.95, 1.95 - state.time / 260);
 
   if (state.nutrientTimer <= 0) {
     spawnNutrient();
@@ -548,27 +513,28 @@ function update(dt) {
     state.bacteriaTimer = bacteriaInterval;
   }
 
-  if (state.nutrients.length > 28) state.nutrients.shift();
-  if (state.bacteria.length > 20) state.bacteria.shift();
+  if (state.nutrients.length > 30) state.nutrients.shift();
+  if (state.bacteria.length > 18) state.bacteria.shift();
 }
 
+// ---- draw ----
 function draw() {
   drawPetriBackground();
 
   // nutrients
   for (const n of state.nutrients) drawNutrient(n);
 
-  // bacteria (SVG), rotate to face movement direction
+  // bacteria (SVG)
   for (const b of state.bacteria) {
     const ang = Math.atan2(b.vy, b.vx);
-    const wob = Math.sin(state.time * 7 + b.seed) * 0.22;
+    const wob = Math.sin(state.time * 6.5 + b.seed) * 0.20;
     drawSprite(bacteriaImg, b.x, b.y, b.r * 2.8, ang + wob, 0.98);
   }
 
-  // bullets
-  drawBullets();
+  // pulse ring overlay (after bacteria so it reads clearly)
+  drawPulseRing();
 
-  // player (SVG) smaller
+  // player (SVG) — slightly smaller sprite scale
   const p = state.player;
   const pulse = 1 + Math.sin(state.time * 5) * 0.012;
 
@@ -576,21 +542,22 @@ function draw() {
   ctx.save();
   ctx.globalAlpha = 0.10;
   ctx.beginPath();
-  ctx.arc(p.x, p.y, p.r * 2.0, 0, Math.PI*2);
+  ctx.arc(p.x, p.y, p.r * 2.0, 0, Math.PI * 2);
   ctx.fillStyle = "#cbe3ff";
   ctx.fill();
   ctx.restore();
 
   // blink when invulnerable
   const alpha = p.invuln > 0 ? (0.55 + 0.45 * Math.sin(state.time * 30)) : 1;
-  drawSprite(cellImg, p.x, p.y, p.r * 2.7 * pulse, 0, alpha);
+  drawSprite(cellImg, p.x, p.y, p.r * 2.6 * pulse, 0, alpha);
 
   // particles
   drawParticles();
 
-  // overlay stats (optional)
+  // HUD overlays
   drawText(`Difficulty: ${state.difficulty.toFixed(2)}`, 14, 22, 13, "rgba(0,0,0,0.55)", "left");
   drawText(`Nutrients: ${state.nutrientsCollected}`, 14, 42, 13, "rgba(0,0,0,0.55)", "left");
+  drawText(`Pulse radius: ${state.pulseRadius}px`, 14, 62, 13, "rgba(0,0,0,0.55)", "left");
 
   if (!state.running) drawGameOver();
 }
@@ -621,9 +588,9 @@ restartBtn.addEventListener("click", resetGame);
   } catch (err) {
     console.error(err);
     statusEl.textContent = "Could not load SVGs. Try running a local server.";
-    ctx.clearRect(0,0,W,H);
-    drawText("SVGs failed to load.", W/2, H/2 - 10, 22, "#ffffff", "center");
-    drawText("Make sure cell.svg and bacteria.svg are in the same folder.", W/2, H/2 + 18, 14, "rgba(255,255,255,0.75)", "center");
-    drawText("Then run: python3 -m http.server", W/2, H/2 + 42, 14, "rgba(255,255,255,0.75)", "center");
+    ctx.clearRect(0, 0, W, H);
+    drawText("SVGs failed to load.", W / 2, H / 2 - 10, 22, "#ffffff", "center");
+    drawText("Make sure cell.svg and bacteria.svg are in the same folder.", W / 2, H / 2 + 18, 14, "rgba(255,255,255,0.75)", "center");
+    drawText("Then run: python3 -m http.server", W / 2, H / 2 + 42, 14, "rgba(255,255,255,0.75)", "center");
   }
 })();
