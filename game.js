@@ -6,12 +6,21 @@ const restartBtn = document.getElementById("restart");
 const W = canvas.width;
 const H = canvas.height;
 
-// ---- input ----
+//  input 
 const keys = new Set();
-window.addEventListener("keydown", (e) => keys.add(e.key.toLowerCase()));
+window.addEventListener("keydown", (e) => {
+  const k = e.key.toLowerCase();
+  keys.add(k);
+
+  // SPACE triggers pulse on command
+  if (e.code === "Space") {
+    e.preventDefault();
+    tryPulse();
+  }
+});
 window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
 
-// ---- helpers ----
+//  helpers 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const rand = (min, max) => Math.random() * (max - min) + min;
 
@@ -54,7 +63,7 @@ function constrainToDish(dish, obj) {
   }
 }
 
-// ---- asset loading (SVG -> Image) ----
+//  asset loading (SVG -> Image) 
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -67,7 +76,7 @@ function loadImage(src) {
 let cellImg = null;
 let bacteriaImg = null;
 
-// ---- game state ----
+//  game state 
 let state;
 
 function resetGame() {
@@ -76,6 +85,11 @@ function resetGame() {
     time: 0,
     score: 0,
     lives: 3,
+
+    // We keep a nutrient bank so pulse can spend it
+    nutrientBank: 0,
+    totalNutrientsCollected: 0,
+
     difficulty: 1,
 
     dish: {
@@ -84,7 +98,7 @@ function resetGame() {
       r: Math.min(W, H) * 0.44
     },
 
-    // smaller cell
+    // smaller cell (as requested previously)
     player: {
       x: W / 2,
       y: H / 2,
@@ -100,23 +114,22 @@ function resetGame() {
     nutrientTimer: 0,
     bacteriaTimer: 0,
 
-    // pulse kill economy
-    nutrientsCollected: 0, // total count
-    pulseEvery: 5,
-    pulseRadius: 130,      // <-- change this if you want bigger/smaller radius
-    pulseFx: 0             // seconds remaining for pulse ring animation
+    // pulse system (manual trigger)
+    pulseCost: 5,
+    pulseRadius: 130,
+    pulseFx: 0,       // ring animation timer
+    pulseCooldown: 0  // prevents spam (short)
   };
 
   updateStatus();
 }
 
 function updateStatus() {
-  // show how close you are to the next pulse
-  const untilPulse = state.pulseEvery - (state.nutrientsCollected % state.pulseEvery);
-  statusEl.textContent = `Score: ${state.score} • Lives: ${state.lives} • Pulse in: ${untilPulse === state.pulseEvery ? 0 : untilPulse}`;
+  statusEl.textContent =
+    `Score: ${state.score} • Lives: ${state.lives} • Nutrients: ${state.nutrientBank} • Pulse: SPACE (-${state.pulseCost})`;
 }
 
-// ---- background: blue outside, pink agar inside ----
+//  background: blue outside, pink agar inside 
 function drawPetriBackground() {
   // BLUE outer background
   const bg = ctx.createRadialGradient(W * 0.35, H * 0.20, 80, W / 2, H / 2, Math.max(W, H) * 1.2);
@@ -193,7 +206,7 @@ function drawPetriBackground() {
   ctx.fillRect(0, 0, W, H);
 }
 
-// ---- particles ----
+//  particles 
 function spawnParticle(type, x, y, vx, vy) {
   const p = {
     type,
@@ -242,7 +255,7 @@ function drawParticles() {
   }
 }
 
-// ---- entities ----
+//  entities 
 function spawnNutrient() {
   const p = randomPointInDish(state.dish, 14);
   state.nutrients.push({
@@ -257,9 +270,7 @@ function spawnBacteria() {
   const p = randomPointInDish(state.dish, 18);
   const seed = rand(0, 9999);
 
-  // Slower difficulty scaling on speed:
-  // - base speeds lower
-  // - scale only partially with difficulty
+  // Slower difficulty scaling on speed
   const base = rand(62, 88);
   const scaled = base * (1 + (state.difficulty - 1) * 0.45);
 
@@ -274,28 +285,37 @@ function spawnBacteria() {
   });
 }
 
-// ---- pulse ability (every 5 nutrients) ----
-function triggerPulse() {
-  state.pulseFx = 0.45; // how long the ring animation lasts
+//  PULSE (manual trigger) 
+function tryPulse() {
+  if (!state || !state.running) return;
+  if (state.pulseCooldown > 0) return;
+
+  if (state.nutrientBank < state.pulseCost) {
+    // not enough nutrients, do nothing (no annoying alert)
+    return;
+  }
+
+  state.nutrientBank -= state.pulseCost;
+  state.pulseFx = 0.45;
+  state.pulseCooldown = 0.30;
 
   const p = state.player;
   const R = state.pulseRadius;
 
-  // eliminate bacteria within radius
+  // eliminate bacteria in radius
   for (let i = state.bacteria.length - 1; i >= 0; i--) {
     const b = state.bacteria[i];
     if (dist(p, b) <= R) {
       state.bacteria.splice(i, 1);
       state.score += 18;
 
-      // burst particles at bacteria location
       for (let k = 0; k < 18; k++) {
         spawnParticle("hit", b.x, b.y, rand(-160, 160), rand(-160, 160));
       }
     }
   }
 
-  // pulse particles from player
+  // pulse burst particles from player
   for (let k = 0; k < 36; k++) {
     const ang = rand(0, Math.PI * 2);
     const spd = rand(120, 240);
@@ -307,9 +327,8 @@ function triggerPulse() {
 
 function drawPulseRing() {
   if (state.pulseFx <= 0) return;
-  const p = state.player;
 
-  // ring expands slightly and fades
+  const p = state.player;
   const t = 1 - (state.pulseFx / 0.45);
   const ringR = state.pulseRadius * (0.92 + 0.10 * t);
 
@@ -329,7 +348,7 @@ function drawPulseRing() {
   ctx.restore();
 }
 
-// ---- drawing SVG sprites ----
+//  drawing SVG sprites 
 function drawSprite(img, x, y, size, rotationRad = 0, alpha = 1) {
   if (!img) return;
   ctx.save();
@@ -375,7 +394,7 @@ function drawGameOver() {
   drawText("Hit Restart to play again", W / 2, H / 2 + 46, 14, "rgba(255,255,255,0.7)", "center");
 }
 
-// ---- movement + collisions ----
+//  movement + collisions 
 function movePlayer(dt) {
   const p = state.player;
   let vx = 0, vy = 0;
@@ -436,7 +455,8 @@ function handleCollisions() {
   state.nutrients = state.nutrients.filter(n => {
     if (dist(p, n) < p.r + n.r) {
       state.score += 10;
-      state.nutrientsCollected += 1;
+      state.nutrientBank += 1;
+      state.totalNutrientsCollected += 1;
 
       updateStatus();
 
@@ -444,11 +464,7 @@ function handleCollisions() {
         spawnParticle("nutrient", n.x, n.y, rand(-90, 90), rand(-90, 90));
       }
 
-      // Every 5 nutrients -> pulse
-      if (state.nutrientsCollected % state.pulseEvery === 0) {
-        triggerPulse();
-      }
-
+      // IMPORTANT: pulse is NOT automatic anymore
       return false;
     }
     return true;
@@ -474,13 +490,11 @@ function handleCollisions() {
   }
 }
 
-// ---- difficulty tuning (slower) ----
-// These are the lines that control how fast it gets hard:
-//  1) state.difficulty ramp (lower slope)
-//  2) spawn intervals ramp (slower ramp + higher minimums)
+//  difficulty tuning (slower) 
 function update(dt) {
-  // pulse ring timer
+  // timers
   state.pulseFx = Math.max(0, state.pulseFx - dt);
+  state.pulseCooldown = Math.max(0, state.pulseCooldown - dt);
 
   if (!state.running) {
     updateParticles(dt);
@@ -489,7 +503,7 @@ function update(dt) {
 
   state.time += dt;
 
-  // SLOWER DIFFICULTY RAMP (was /45 or /90; even slower now)
+  // Slower difficulty ramp
   state.difficulty = 1 + state.time / 120;
 
   movePlayer(dt);
@@ -497,7 +511,7 @@ function update(dt) {
   handleCollisions();
   updateParticles(dt);
 
-  // SLOWER SPAWN RAMP (bacteria appear slower + ramp slower)
+  // Slower spawn ramp
   state.nutrientTimer -= dt;
   state.bacteriaTimer -= dt;
 
@@ -517,7 +531,7 @@ function update(dt) {
   if (state.bacteria.length > 18) state.bacteria.shift();
 }
 
-// ---- draw ----
+//  draw 
 function draw() {
   drawPetriBackground();
 
@@ -531,10 +545,10 @@ function draw() {
     drawSprite(bacteriaImg, b.x, b.y, b.r * 2.8, ang + wob, 0.98);
   }
 
-  // pulse ring overlay (after bacteria so it reads clearly)
+  // pulse ring overlay (manual trigger)
   drawPulseRing();
 
-  // player (SVG) — slightly smaller sprite scale
+  // player (SVG)
   const p = state.player;
   const pulse = 1 + Math.sin(state.time * 5) * 0.012;
 
@@ -554,15 +568,15 @@ function draw() {
   // particles
   drawParticles();
 
-  // HUD overlays
+  // overlay info
   drawText(`Difficulty: ${state.difficulty.toFixed(2)}`, 14, 22, 13, "rgba(0,0,0,0.55)", "left");
-  drawText(`Nutrients: ${state.nutrientsCollected}`, 14, 42, 13, "rgba(0,0,0,0.55)", "left");
-  drawText(`Pulse radius: ${state.pulseRadius}px`, 14, 62, 13, "rgba(0,0,0,0.55)", "left");
+  drawText(`Nutrient bank: ${state.nutrientBank}`, 14, 42, 13, "rgba(0,0,0,0.55)", "left");
+  drawText(`Pulse: SPACE (-${state.pulseCost})`, 14, 62, 13, "rgba(0,0,0,0.55)", "left");
 
   if (!state.running) drawGameOver();
 }
 
-// ---- boot ----
+//  boot 
 restartBtn.addEventListener("click", resetGame);
 
 (async function start() {
