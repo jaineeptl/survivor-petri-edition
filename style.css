@@ -1,5 +1,6 @@
 :root{
-  --bg:#070b10;
+  --bg1:#0b2b5a;
+  --bg2:#081a36;
   --card:#0c121b;
   --border:rgba(255,255,255,0.10);
   --text:#e8eef7;
@@ -11,7 +12,7 @@
 body{
   margin:0;
   min-height:100vh;
-  background: radial-gradient(1200px 900px at 35% 15%, #131f2e, var(--bg));
+  background: radial-gradient(1200px 900px at 35% 15%, #1a4b8f, var(--bg2));
   color:var(--text);
   font-family: system-ui, -apple-system, Segoe UI, Arial, sans-serif;
 }
@@ -42,6 +43,13 @@ h1{
   display:flex;
   align-items:center;
   gap:12px;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}
+
+.buttons{
+  display:flex;
+  gap:10px;
 }
 
 #status{
@@ -83,9 +91,4 @@ canvas{
   margin-top:10px;
   font-size:13px;
   color:rgba(232,238,247,0.70);
-}
-.hint2{
-  margin-top:4px;
-  font-size:12px;
-  color:rgba(232,238,247,0.50);
 }
