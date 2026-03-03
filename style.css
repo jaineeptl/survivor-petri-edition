@@ -1,0 +1,8 @@
+body { font-family: system-ui, -apple-system, Arial; background: #0b0f14; color: #e8eef7; }
+.wrap { max-width: 900px; margin: 24px auto; padding: 0 16px; }
+canvas { background: #0f1622; border: 1px solid #233044; border-radius: 12px; width: 100%; height: auto; }
+.hud { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+button { padding: 8px 12px; border-radius: 10px; border: 1px solid #2b3b52; background: #152033; color: #e8eef7; cursor: pointer; }
+button:hover { background: #1a2840; }
+.tip { opacity: 0.8; font-size: 14px; margin-top: 8px; }
+h1 { font-size: 20px; font-weight: 650; margin-bottom: 10px; }
