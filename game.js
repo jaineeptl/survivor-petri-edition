@@ -461,12 +461,9 @@ function handleCollisions() {
       state.score += 10;
       state.nutrientsCollected += 1;
 
-      // every 10 nutrients -> +1 shot
-       state.nutrientsCollected += 1;
-
-if (state.nutrientsCollected >= 3) {
+     // every 3 nutrients -> +1 shot
+if (state.nutrientsCollected % 3 === 0) {
   state.shots += 1;
-  state.nutrientsCollected = 0;
 }
 
 
