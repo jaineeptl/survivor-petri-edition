@@ -7,7 +7,7 @@ const restartBtn = document.getElementById("restart");
 const W = canvas.width;
 const H = canvas.height;
 
-// ---- input ----
+//  input 
 const keys = new Set();
 window.addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
@@ -21,7 +21,7 @@ window.addEventListener("keydown", (e) => {
 });
 window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
 
-// ---- helpers ----
+//  helpers 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const rand = (min, max) => Math.random() * (max - min) + min;
 
@@ -64,7 +64,7 @@ function constrainToDish(dish, obj) {
   }
 }
 
-// ---- asset loading (SVG -> Image) ----
+//  asset loading (SVG -> Image) 
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -77,7 +77,7 @@ function loadImage(src) {
 let cellImg = null;
 let bacteriaImg = null;
 
-// ---- game state ----
+//  game state 
 let state;
 
 function resetGame() {
@@ -132,7 +132,7 @@ function updateStatus() {
     `Score: ${state.score} • Lives: ${state.lives} • Nutrients: ${state.nutrientBank} • Pulse: SPACE (-${state.pulseCost})`;
 }
 
-// ---- background: blue outside, pink agar inside ----
+//  background: blue outside, pink agar inside 
 function drawPetriBackground() {
   // BLUE outer background
   const bg = ctx.createRadialGradient(W * 0.35, H * 0.20, 80, W / 2, H / 2, Math.max(W, H) * 1.2);
@@ -209,7 +209,7 @@ function drawPetriBackground() {
   ctx.fillRect(0, 0, W, H);
 }
 
-// ---- particles ----
+//  particles 
 function spawnParticle(type, x, y, vx, vy) {
   const p = {
     type,
@@ -258,7 +258,7 @@ function drawParticles() {
   }
 }
 
-// ---- entities ----
+//  entities 
 function spawnNutrient() {
   const p = randomPointInDish(state.dish, 14);
   state.nutrients.push({
@@ -288,7 +288,7 @@ function spawnBacteria() {
   });
 }
 
-// ---- PULSE (manual trigger) ----
+//  PULSE (manual trigger) 
 function tryPulse() {
   if (!state || !state.running) return;
   if (state.pulseCooldown > 0) return;
@@ -350,7 +350,7 @@ function drawPulseRing() {
   ctx.restore();
 }
 
-// ---- HUD meters (Life + Pulse-ready) ----
+//  HUD meters (Life + Pulse-ready) 
 function drawMeter(x, y, w, h, frac, label, opts = {}) {
   const {
     fill = "rgba(203,227,255,0.9)",
@@ -433,7 +433,7 @@ function drawHUD() {
   );
 }
 
-// ---- drawing SVG sprites ----
+//  drawing SVG sprites 
 function drawSprite(img, x, y, size, rotationRad = 0, alpha = 1) {
   if (!img) return;
   ctx.save();
@@ -479,7 +479,7 @@ function drawGameOver() {
   drawText("Hit Restart to play again", W / 2, H / 2 + 46, 14, "rgba(255,255,255,0.7)", "center");
 }
 
-// ---- movement + collisions ----
+//  movement + collisions 
 function movePlayer(dt) {
   const p = state.player;
   let vx = 0, vy = 0;
@@ -575,7 +575,7 @@ function handleCollisions() {
   }
 }
 
-// ---- difficulty tuning (slower) ----
+//  difficulty tuning (slower)  
 function update(dt) {
   // timers
   state.pulseFx = Math.max(0, state.pulseFx - dt);
@@ -616,7 +616,7 @@ function update(dt) {
   if (state.bacteria.length > 18) state.bacteria.shift();
 }
 
-// ---- draw ----
+//  draw 
 function draw() {
   drawPetriBackground();
 
@@ -659,7 +659,7 @@ function draw() {
   if (!state.running) drawGameOver();
 }
 
-// ---- boot ----
+//  boot 
 restartBtn.addEventListener("click", resetGame);
 
 (async function start() {
