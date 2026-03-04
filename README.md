@@ -12,7 +12,7 @@ Collect green nutrients (+10 score each)
 
 Avoid bacteria (lose a life on contact)
 
-Every 5 nutrients → automatic elimination pulse within a radius
+Every 5 nutrients → gain a pulse within a radius to eliminate nearby bacteria (SPACE bar)
 
 Difficulty increases over time.
 
