@@ -31,3 +31,5 @@ Difficulty increases over time.
 3. Double-click index.html (should open game in your browser)
 
 # Enjoy! 
+<img width="830" height="550" alt="Screenshot 2026-03-03 at 5 36 05 PM" src="https://github.com/user-attachments/assets/291877fc-ff03-4b40-9a60-6f1dca0c33d5" />
+
